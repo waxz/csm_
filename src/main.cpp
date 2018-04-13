@@ -45,13 +45,12 @@ void scan_cbk(const sm::LaserScan::ConstPtr & scan_msg){
 
 
     ROS_INFO("start csm!!!!");
+    // laser odometry
+    // set base_pose to identity
+    gm::Pose base_pose;
 
-    vector<double> res = csm_wrapper->csm_fit(pre_scan,cur_scan);
-    pre_scan = cur_scan;
-    if (!res.empty())
-        ROS_INFO("get csm fit %f, %f, %f",res[0],res[1],res[2]);
-    else
-        ROS_ERROR("csm failure!!!!");
+    gm::Pose res_pose = csm_wrapper->get_base_pose(pre_scan, cur_scan, base_pose, base_laser_tf);
+
 
 }
 void lookup_base_laser_tf(const string &base_frame, const  string &laser_frame) {
@@ -75,40 +74,6 @@ void lookup_base_laser_tf(const string &base_frame, const  string &laser_frame) 
 
 }
 
-void locate(const sm::LaserScan::ConstPtr &scan_msg, const gm::PoseWithCovarianceStamped::ConstPtr &pose_msg){
-
-    ROS_INFO("sync!!!!!!");
-
-    // base pose to laser pose
-    tf::Transform fix_base_tf_;
-    tf::poseMsgToTF(pose_msg->pose.pose, fix_base_tf_);
-    // apply transform , get laser pose in fix frame
-//    ROS_INFO("poseTFToMsg");
-    tf::poseTFToMsg(fix_base_tf_ * base_laser_tf, laser_pose);
-
-
-    sm::LaserScan::Ptr map_scan_ptr = gen_ptr->get_laser(laser_pose);
-
-    // ** test csm fit only
-
-//    vector<double> res = csm_wrapper->csm_fit(*map_scan_ptr,*scan_msg);
-//    pre_scan = cur_scan;
-//    if (!res.empty())
-//        ROS_INFO("get csm fit %f, %f, %f",res[0],res[1],res[2]);
-//    else
-//        ROS_ERROR("csm failure!!!!");
-
-
-    gm::Pose base_pose;
-    base_pose =pose_msg->pose.pose;
-
-    gm::Pose res_pose = csm_wrapper->get_base_pose(*map_scan_ptr,*scan_msg,base_pose, base_laser_tf);
-
-
-    ROS_INFO("get amcl pose [%f,%f,%f] \n get icp pose [%f,%f,%f]",
-             pose_msg->pose.pose.position.x,pose_msg->pose.pose.position.y,pose_msg->pose.pose.orientation.w,
-             res_pose.position.x,res_pose.position.y,res_pose.orientation.w);
-}
 
 void locate2(const gm::PoseWithCovarianceStamped::ConstPtr &pose_msg, const nav_msgs::Odometry::ConstPtr &true_pose_msg){
 

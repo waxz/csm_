@@ -151,8 +151,16 @@ void Csm_Wrapper::init_params() {
     // correspondence by 1/sigma^2
     if (!nh_private_.getParam("use_sigma_weights", input_.use_sigma_weights))
         input_.use_sigma_weights = 0;
+    // enable debug log output
     if (!nh_private_.getParam("sm_debug_write_flag", sm_debug_write_flag))
         sm_debug_write_flag = 1;
+
+    // fix amcl pose angle error too much bug
+    if (!nh_private_.getParam("offset_degree", offset_degree_))
+        offset_degree_ = 20;
+    if (!nh_private_.getParam("offset_cnt", offset_cnt_))
+        offset_cnt_ = 10;
+
 
     sm_debug_write(sm_debug_write_flag);
 
@@ -161,21 +169,19 @@ void Csm_Wrapper::init_params() {
 
 }
 
-void Csm_Wrapper::scan_to_ldp(const sm::LaserScan &scan, LDP &ldp) {
+void Csm_Wrapper::scan_to_ldp(const sm::LaserScan &scan, LDP &ldp, double offset = 0.0) {
     int n = scan.ranges.size();
     ldp = ld_alloc_new(n);
-    int valid_cnt = 0;
     for (int i = 0; i < n; i++) {
         double r = scan.ranges[i];
         bool valid = (r < scan.range_max) && (r > scan.range_min);
 
         ldp->valid[i] = (valid) ? 1 : 0;
-        valid_cnt += (valid) ? 1 : 0;
         ldp->readings[i] = (valid) ? r : -1;
-        ldp->theta[i] = scan.angle_min + i * scan.angle_increment;
+        ldp->theta[i] = scan.angle_min + i * scan.angle_increment + offset;
         ldp->cluster[i] = -1;
+        ldp->readings_sigma[i] = 1.0;
     }
-    ROS_ERROR("scan valid cnt %d", valid_cnt);
 
     ldp->min_theta = ldp->theta[0];
     ldp->max_theta = ldp->theta[n - 1];
@@ -193,16 +199,12 @@ void Csm_Wrapper::scan_to_ldp(const sm::LaserScan &scan, LDP &ldp) {
 
 }
 
-vector<double> Csm_Wrapper::csm_fit(const sm::LaserScan &map_scan, const sm::LaserScan &sensor_scan) {
+vector<double> Csm_Wrapper::csm_fit() {
 
     vector<double> res;
     res.clear();
 
-    // **** prepare data
-    scan_to_ldp(map_scan, map_ldp_);
-    scan_to_ldp(sensor_scan, scan_ldp_);
-    input_.min_reading = sensor_scan.range_min;
-    input_.max_reading = sensor_scan.range_max;
+
 
     // **** reset ldp pose
     // odometry, estimate, true_pose
@@ -222,9 +224,9 @@ vector<double> Csm_Wrapper::csm_fit(const sm::LaserScan &map_scan, const sm::Las
     // *** compute relative translation and rotation between two scan
     // get final pose?
 
-    input_.first_guess[0] = 0.1;
-    input_.first_guess[1] = 0.1;
-    input_.first_guess[2] = 0.1;
+    input_.first_guess[0] = 0.0;
+    input_.first_guess[1] = 0.0;
+    input_.first_guess[2] = 0.0;
 
     // **** clear output data
     // Initialize output_ vectors as Null for error-checking
@@ -251,9 +253,11 @@ vector<double> Csm_Wrapper::csm_fit(const sm::LaserScan &map_scan, const sm::Las
     if (output_.valid) {
 
 
-        printf("get relative transsaltion [x,y,yaw]: [%f,%f,%f] \n", output_.x[0], output_.x[1], output_.x[2]);
+        ROS_ERROR("get relative transsaltion [x,y,yaw]: [%f,%f,%f] \n", output_.x[0], output_.x[1], output_.x[2]);
+        double res_array[] = {output_.x[0], output_.x[1], output_.x[2]};
 
-        res = vector<double>(output_.x, output_.x + 3);
+        res = vector<double>(res_array, res_array + 3);
+
     } else {
         printf("failure");
     }
@@ -276,20 +280,108 @@ Csm_Wrapper::get_base_pose(const sm::LaserScan &map_scan, const sm::LaserScan &s
     tf::Pose base_pose_tf;
     tf::poseMsgToTF(base_pose, base_pose_tf);
 
+    // **** prepare data
 
-    vector<double> res = csm_fit(map_scan, sensor_scan);
+    input_.min_reading = sensor_scan.range_min;
+    input_.max_reading = sensor_scan.range_max;
+
+
+
+    // try different angle offset
+    // anverage csmfit time 0.06s
+    // try 10 angle offset, cost 0.6s
+    double offset_range = offset_degree_ * Pi / 180.0;
+    vector<double> res;
+//    double offset = 0;
+//    int cnt = 0;
+//    for (cnt = 1; cnt< offset_cnt_;cnt++){
+//        offset=((cnt %2 ) == 0 ?1:-1)*(cnt/2)*2*offset_range/offset_cnt_ ;
+//        ROS_INFO("csm check offset %f",offset);
+//
+//        scan_to_ldp(map_scan, map_ldp_, offset);
+//        scan_to_ldp(sensor_scan, scan_ldp_);
+//
+//        res = csm_fit();
+//        if (res.empty())
+//            continue;
+//        else
+//            break;
+//
+//    }
+    scan_to_ldp(map_scan, map_ldp_);
+    scan_to_ldp(sensor_scan, scan_ldp_);
+
+    res = csm_fit();
+
     if (res.empty()) {
-        ROS_ERROR("csm failure ==============");
+        ROS_ERROR("                                                                    \n"
+                          "            .,,       .,:;;iiiiiiiii;;:,,.     .,,                   \n"
+                          "          rGB##HS,.;iirrrrriiiiiiiiiirrrrri;,s&##MAS,                \n"
+                          "         r5s;:r3AH5iiiii;;;;;;;;;;;;;;;;iiirXHGSsiih1,               \n"
+                          "            .;i;;s91;;;;;;::::::::::::;;;;iS5;;;ii:                  \n"
+                          "          :rsriii;;r::::::::::::::::::::::;;,;;iiirsi,               \n"
+                          "       .,iri;;::::;;;;;;::,,,,,,,,,,,,,..,,;;;;;;;;iiri,,.           \n"
+                          "    ,9BM&,            .,:;;:,,,,,,,,,,,hXA8:            ..,,,.       \n"
+                          "   ,;&@@#r:;;;;;::::,,.   ,r,,,,,,,,,,iA@@@s,,:::;;;::,,.   .;.      \n"
+                          "    :ih1iii;;;;;::::;;;;;;;:,,,,,,,,,,;i55r;;;;;;;;;iiirrrr,..       \n"
+                          "   .ir;;iiiiiiiiii;;;;::::::,,,,,,,:::::,,:;;;iiiiiiiiiiiiri         \n"
+                          "   iriiiiiiiiiiiiiiii;;;::::::::::::::::;;;iiiiiiiiiiiiiiiir;        \n"
+                          "  ,riii;;;;;;;;;;;;;:::::::::::::::::::::::;;;;;;;;;;;;;;iiir.       \n"
+                          "  iri;;;::::,,,,,,,,,,:::::::::::::::::::::::::,::,,::::;;iir:       \n"
+                          " .rii;;::::,,,,,,,,,,,,:::::::::::::::::,,,,,,,,,,,,,::::;;iri       \n"
+                          " ,rii;;;::,,,,,,,,,,,,,:::::::::::,:::::,,,,,,,,,,,,,:::;;;iir.      \n"
+                          " ,rii;;i::,,,,,,,,,,,,,:::::::::::::::::,,,,,,,,,,,,,,::i;;iir.      \n"
+                          " ,rii;;r::,,,,,,,,,,,,,:,:::::,:,:::::::,,,,,,,,,,,,,::;r;;iir.      \n"
+                          " .rii;;rr,:,,,,,,,,,,,,,,:::::::::::::::,,,,,,,,,,,,,:,si;;iri       \n"
+                          "  ;rii;:1i,,,,,,,,,,,,,,,,,,:::::::::,,,,,,,,,,,,,,,:,ss:;iir:       \n"
+                          "  .rii;;;5r,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,sh:;;iri        \n"
+                          "   ;rii;:;51,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,.:hh:;;iir,        \n"
+                          "    irii;::hSr,.,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,.,sSs:;;iir:         \n"
+                          "     irii;;:iSSs:.,,,,,,,,,,,,,,,,,,,,,,,,,,,..:135;:;;iir:          \n"
+                          "      ;rii;;:,r535r:...,,,,,,,,,,,,,,,,,,..,;sS35i,;;iirr:           \n"
+                          "       :rrii;;:,;1S3Shs;:,............,:is533Ss:,;;;iiri,            \n"
+                          "        .;rrii;;;:,;rhS393S55hh11hh5S3393Shr:,:;;;iirr:              \n"
+                          "          .;rriii;;;::,:;is1h555555h1si;:,::;;;iirri:.               \n"
+                          "            .:irrrii;;;;;:::,,,,,,,,:::;;;;iiirrr;,                  \n"
+                          "               .:irrrriiiiii;;;;;;;;iiiiiirrrr;,.                    \n"
+                          "                  .,:;iirrrrrrrrrrrrrrrrri;:.                        \n"
+                          "                        ..,:::;;;;:::,,.                             \n"
+                          "/                                                                ");
         return base_pose;
     }
+
+
     tf::Transform laser_pose_chage;
     set_tf(res[0], res[1], res[2], laser_pose_chage);
-    tf::Pose base_chage = (base_laser_tf.inverse()) * laser_pose_chage;
+
 
     // laser pose
 
-    tf::poseTFToMsg(base_pose_tf * base_laser_tf * laser_pose_chage * base_laser_tf.inverse(), res_pose);
-    ROS_DEBUG("check   TF to MSG %f", res_pose.orientation.w);
+
+    tf::poseTFToMsg(base_pose_tf * base_laser_tf * laser_pose_chage * (base_laser_tf.inverse()), res_pose);
+    ROS_ERROR(
+            "base_laser_tf [%f,%f,%f,%f,%f,%f],laser_pose_chage [%f,%f,%f,%f,%f,%f],laser_pose_chage [%f,%f,%f,%f,%f,%f]",
+            base_laser_tf.getOrigin().getX(), base_laser_tf.getOrigin().getY(), base_laser_tf.getRotation().getX(),
+            base_laser_tf.getRotation().getY(), base_laser_tf.getRotation().getZ(), base_laser_tf.getRotation().getW(),
+            laser_pose_chage.getOrigin().getX(), laser_pose_chage.getOrigin().getY(),
+            laser_pose_chage.getRotation().getX(),
+            laser_pose_chage.getRotation().getY(), laser_pose_chage.getRotation().getZ(),
+            laser_pose_chage.getRotation().getW(),
+            (base_laser_tf.inverse()).getOrigin().getX(), (base_laser_tf.inverse()).getOrigin().getY(),
+            (base_laser_tf.inverse()).getRotation().getX(),
+            (base_laser_tf.inverse()).getRotation().getY(), (base_laser_tf.inverse()).getRotation().getZ(),
+            (base_laser_tf.inverse()).getRotation().getW()
+    );
+    ROS_ERROR(
+            "======================\n trans [%f,%f,%f] \n amcl pose [%f,%f,%f,%f,%f,%f], transformation [%f,%f,%f,%f,%f,%f]",
+            res[0], res[1], res[2],
+            base_pose.position.x, base_pose.position.y, base_pose.orientation.x,
+            base_pose.orientation.y, base_pose.orientation.z, base_pose.orientation.w,
+            res_pose.position.x, res_pose.position.y, res_pose.orientation.x,
+            res_pose.orientation.y, res_pose.orientation.z, res_pose.orientation.w
+
+    );
+
     return res_pose;
 
 
@@ -297,8 +389,7 @@ Csm_Wrapper::get_base_pose(const sm::LaserScan &map_scan, const sm::LaserScan &s
 
 void Csm_Wrapper::set_tf(double x, double y, double yaw, tf::Transform &t) {
 
-    tf::Transform trans;
-    trans.setOrigin(tf::Vector3(x, y, 0.0));
+    t.setOrigin(tf::Vector3(x, y, 0.0));
     tf::Quaternion q;
     q.setRPY(0.0, 0.0, yaw);
     t.setRotation(q);
