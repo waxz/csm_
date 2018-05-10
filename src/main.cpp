@@ -48,8 +48,10 @@ void scan_cbk(const sm::LaserScan::ConstPtr & scan_msg){
     // laser odometry
     // set base_pose to identity
     gm::Pose base_pose;
+    int corr_valid_cnt;
 
-    gm::Pose res_pose = csm_wrapper->get_base_pose(pre_scan, cur_scan, base_pose, base_laser_tf);
+
+    csm_wrapper->get_base_pose(pre_scan, cur_scan, base_pose, base_laser_tf, corr_valid_cnt);
 
 
 }
@@ -92,9 +94,8 @@ void locate2(const gm::PoseWithCovarianceStamped::ConstPtr &pose_msg, const nav_
     tf::poseTFToMsg(true_fix_base_tf_ * base_laser_tf, true_laser_pose);
 
 
-
-    sm::LaserScan::Ptr map_scan_ptr = gen_ptr->get_laser(true_laser_pose);
-    sm::LaserScan::Ptr sensor_scan_ptr = gen_ptr->get_laser(true_laser_pose);
+    sm::LaserScan map_scan_ = gen_ptr->get_laser(true_laser_pose);
+    sm::LaserScan sensor_scan_ = gen_ptr->get_laser(true_laser_pose);
 
     // ** test csm fit only
 
@@ -108,13 +109,14 @@ void locate2(const gm::PoseWithCovarianceStamped::ConstPtr &pose_msg, const nav_
 
     gm::Pose base_pose;
     base_pose =pose_msg->pose.pose;
+    int corr_valid_cnt;
 
-    gm::Pose res_pose = csm_wrapper->get_base_pose(*map_scan_ptr,*sensor_scan_ptr,base_pose, base_laser_tf);
+    csm_wrapper->get_base_pose(map_scan_, sensor_scan_, base_pose, base_laser_tf, corr_valid_cnt);
 
 
     ROS_INFO("get amcl pose [%f,%f,%f] \n get icp pose [%f,%f,%f]",
-             pose_msg->pose.pose.position.x,pose_msg->pose.pose.position.y,pose_msg->pose.pose.orientation.w,
-             res_pose.position.x,res_pose.position.y,res_pose.orientation.w);
+             pose_msg->pose.pose.position.x, pose_msg->pose.pose.position.y, pose_msg->pose.pose.orientation.w,
+             base_pose.position.x, base_pose.position.y, base_pose.orientation.w);
 }
 
 

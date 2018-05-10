@@ -7,6 +7,8 @@
 
 #include <string>
 #include <vector>
+#include <valarray>
+
 #include <ros/ros.h>
 #include <tf/transform_datatypes.h>
 #include <tf/transform_listener.h>
@@ -29,10 +31,15 @@ class Csm_Wrapper {
 public:
     Csm_Wrapper(ros::NodeHandle nh, ros::NodeHandle nh_private);
 
-    vector<double> csm_fit();
+    double csm_fit(vector<double> &res);
 
-    gm::Pose get_base_pose(const sm::LaserScan &map_scan, const sm::LaserScan &sensor_scan, gm::Pose &init_pose,
-                           const tf::Transform &base_laser_tf);
+    int find_match_point(const sm::LaserScan &map_scan, const sm::LaserScan &sensor_scan);
+
+    double get_base_pose(const sm::LaserScan &map_scan, const sm::LaserScan &sensor_scan, gm::Pose &init_pose,
+                         const tf::Transform &base_laser_tf, int &corr_valid_cnt);
+
+    void init_params();
+
 
 private:
     // **** ros
@@ -43,13 +50,16 @@ private:
     double offset_degree_, offset_cnt_;
 
     LDP map_ldp_, scan_ldp_;
+    // after match how many point get correspondens point
+    int corr_valid_cnt_;
+    // after match corresponse point distance error
+    double corr_match_error_;
 
     // **** input feed to csm
     sm_params input_;
     sm_result output_;
 
 
-    void init_params();
 
     int sm_debug_write_flag;
 

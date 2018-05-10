@@ -3,6 +3,8 @@
 //
 
 #include <csm_wrapper/csm_wrapper.h>
+#include <csm/csm.h>
+#include <icp/icp.h>
 // CSM is used in the following way:
 // The scans are always in the laser frame
 // The reference scan (mapscan) has a pose of [0, 0, 0]
@@ -199,9 +201,8 @@ void Csm_Wrapper::scan_to_ldp(const sm::LaserScan &scan, LDP &ldp, double offset
 
 }
 
-vector<double> Csm_Wrapper::csm_fit() {
+double Csm_Wrapper::csm_fit(vector<double> &res) {
 
-    vector<double> res;
     res.clear();
 
 
@@ -248,34 +249,56 @@ vector<double> Csm_Wrapper::csm_fit() {
         output_.dx_dy2_m = 0;
     }
 
+    double match_error = 100.0;
+    corr_valid_cnt_ = 0;
+
+
+
+
     // **** feed to csm
     sm_icp(&input_, &output_);
     if (output_.valid) {
 
 
-        ROS_ERROR("get relative transsaltion [x,y,yaw]: [%f,%f,%f] \n", output_.x[0], output_.x[1], output_.x[2]);
+        ROS_ERROR("get relative translation [x,y,yaw]: [%f,%f,%f] \n", output_.x[0], output_.x[1], output_.x[2]);
         double res_array[] = {output_.x[0], output_.x[1], output_.x[2]};
 
         res = vector<double>(res_array, res_array + 3);
+        // compute match error
+        map_ldp_->points_w->phi;
+        // point phi to valarray
+        valarray<double> map_val(1.0, size_t(map_ldp_->nrays)), scan_val(1.0, size_t(map_ldp_->nrays));
+
+
+        for (int i = 0; i < map_ldp_->nrays; i++) {
+            if (!isnan(map_ldp_->readings[i]) && !isnan(scan_ldp_->points_w[i].rho) && scan_ldp_->corr[i].valid == 1) {
+                map_val[i] = map_ldp_->readings[i];
+                scan_val[i] = scan_ldp_->points_w[i].rho;
+                corr_valid_cnt_++;
+            }
+        }
+        match_error = (abs(map_val - scan_val)).sum() / double(map_ldp_->nrays);
+
 
     } else {
         printf("failure");
     }
 
+
+
     // **** free memory
     ld_free(map_ldp_);
     ld_free(scan_ldp_);
 
-    return res;
+
+    return match_error;
 
 }
 
 
-gm::Pose
-Csm_Wrapper::get_base_pose(const sm::LaserScan &map_scan, const sm::LaserScan &sensor_scan, gm::Pose &base_pose,
-                           const tf::Transform &base_laser_tf) {
+double Csm_Wrapper::get_base_pose(const sm::LaserScan &map_scan, const sm::LaserScan &sensor_scan, gm::Pose &base_pose,
+                                  const tf::Transform &base_laser_tf, int &corr_valid_cnt) {
 
-    gm::Pose res_pose;
 
     tf::Pose base_pose_tf;
     tf::poseMsgToTF(base_pose, base_pose_tf);
@@ -311,43 +334,12 @@ Csm_Wrapper::get_base_pose(const sm::LaserScan &map_scan, const sm::LaserScan &s
     scan_to_ldp(map_scan, map_ldp_);
     scan_to_ldp(sensor_scan, scan_ldp_);
 
-    res = csm_fit();
+    double match_error = csm_fit(res);
+    corr_valid_cnt = corr_valid_cnt_;
 
     if (res.empty()) {
-        ROS_ERROR("                                                                    \n"
-                          "            .,,       .,:;;iiiiiiiii;;:,,.     .,,                   \n"
-                          "          rGB##HS,.;iirrrrriiiiiiiiiirrrrri;,s&##MAS,                \n"
-                          "         r5s;:r3AH5iiiii;;;;;;;;;;;;;;;;iiirXHGSsiih1,               \n"
-                          "            .;i;;s91;;;;;;::::::::::::;;;;iS5;;;ii:                  \n"
-                          "          :rsriii;;r::::::::::::::::::::::;;,;;iiirsi,               \n"
-                          "       .,iri;;::::;;;;;;::,,,,,,,,,,,,,..,,;;;;;;;;iiri,,.           \n"
-                          "    ,9BM&,            .,:;;:,,,,,,,,,,,hXA8:            ..,,,.       \n"
-                          "   ,;&@@#r:;;;;;::::,,.   ,r,,,,,,,,,,iA@@@s,,:::;;;::,,.   .;.      \n"
-                          "    :ih1iii;;;;;::::;;;;;;;:,,,,,,,,,,;i55r;;;;;;;;;iiirrrr,..       \n"
-                          "   .ir;;iiiiiiiiii;;;;::::::,,,,,,,:::::,,:;;;iiiiiiiiiiiiri         \n"
-                          "   iriiiiiiiiiiiiiiii;;;::::::::::::::::;;;iiiiiiiiiiiiiiiir;        \n"
-                          "  ,riii;;;;;;;;;;;;;:::::::::::::::::::::::;;;;;;;;;;;;;;iiir.       \n"
-                          "  iri;;;::::,,,,,,,,,,:::::::::::::::::::::::::,::,,::::;;iir:       \n"
-                          " .rii;;::::,,,,,,,,,,,,:::::::::::::::::,,,,,,,,,,,,,::::;;iri       \n"
-                          " ,rii;;;::,,,,,,,,,,,,,:::::::::::,:::::,,,,,,,,,,,,,:::;;;iir.      \n"
-                          " ,rii;;i::,,,,,,,,,,,,,:::::::::::::::::,,,,,,,,,,,,,,::i;;iir.      \n"
-                          " ,rii;;r::,,,,,,,,,,,,,:,:::::,:,:::::::,,,,,,,,,,,,,::;r;;iir.      \n"
-                          " .rii;;rr,:,,,,,,,,,,,,,,:::::::::::::::,,,,,,,,,,,,,:,si;;iri       \n"
-                          "  ;rii;:1i,,,,,,,,,,,,,,,,,,:::::::::,,,,,,,,,,,,,,,:,ss:;iir:       \n"
-                          "  .rii;;;5r,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,sh:;;iri        \n"
-                          "   ;rii;:;51,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,.:hh:;;iir,        \n"
-                          "    irii;::hSr,.,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,.,sSs:;;iir:         \n"
-                          "     irii;;:iSSs:.,,,,,,,,,,,,,,,,,,,,,,,,,,,..:135;:;;iir:          \n"
-                          "      ;rii;;:,r535r:...,,,,,,,,,,,,,,,,,,..,;sS35i,;;iirr:           \n"
-                          "       :rrii;;:,;1S3Shs;:,............,:is533Ss:,;;;iiri,            \n"
-                          "        .;rrii;;;:,;rhS393S55hh11hh5S3393Shr:,:;;;iirr:              \n"
-                          "          .;rriii;;;::,:;is1h555555h1si;:,::;;;iirri:.               \n"
-                          "            .:irrrii;;;;;:::,,,,,,,,:::;;;;iiirrr;,                  \n"
-                          "               .:irrrriiiiii;;;;;;;;iiiiiirrrr;,.                    \n"
-                          "                  .,:;iirrrrrrrrrrrrrrrrri;:.                        \n"
-                          "                        ..,:::;;;;:::,,.                             \n"
-                          "/                                                                ");
-        return base_pose;
+        ROS_ERROR("******************\ncsm failure \n******************\n");
+        return match_error;
     }
 
 
@@ -358,34 +350,80 @@ Csm_Wrapper::get_base_pose(const sm::LaserScan &map_scan, const sm::LaserScan &s
     // laser pose
 
 
-    tf::poseTFToMsg(base_pose_tf * base_laser_tf * laser_pose_chage * (base_laser_tf.inverse()), res_pose);
-    ROS_ERROR(
-            "base_laser_tf [%f,%f,%f,%f,%f,%f],laser_pose_chage [%f,%f,%f,%f,%f,%f],laser_pose_chage [%f,%f,%f,%f,%f,%f]",
-            base_laser_tf.getOrigin().getX(), base_laser_tf.getOrigin().getY(), base_laser_tf.getRotation().getX(),
-            base_laser_tf.getRotation().getY(), base_laser_tf.getRotation().getZ(), base_laser_tf.getRotation().getW(),
-            laser_pose_chage.getOrigin().getX(), laser_pose_chage.getOrigin().getY(),
-            laser_pose_chage.getRotation().getX(),
-            laser_pose_chage.getRotation().getY(), laser_pose_chage.getRotation().getZ(),
-            laser_pose_chage.getRotation().getW(),
-            (base_laser_tf.inverse()).getOrigin().getX(), (base_laser_tf.inverse()).getOrigin().getY(),
-            (base_laser_tf.inverse()).getRotation().getX(),
-            (base_laser_tf.inverse()).getRotation().getY(), (base_laser_tf.inverse()).getRotation().getZ(),
-            (base_laser_tf.inverse()).getRotation().getW()
-    );
-    ROS_ERROR(
-            "======================\n trans [%f,%f,%f] \n amcl pose [%f,%f,%f,%f,%f,%f], transformation [%f,%f,%f,%f,%f,%f]",
-            res[0], res[1], res[2],
-            base_pose.position.x, base_pose.position.y, base_pose.orientation.x,
-            base_pose.orientation.y, base_pose.orientation.z, base_pose.orientation.w,
-            res_pose.position.x, res_pose.position.y, res_pose.orientation.x,
-            res_pose.orientation.y, res_pose.orientation.z, res_pose.orientation.w
+    tf::poseTFToMsg(base_pose_tf * base_laser_tf * laser_pose_chage * (base_laser_tf.inverse()), base_pose);
 
-    );
 
-    return res_pose;
+    return match_error;
 
 
 }
+
+
+// find match point between two laser scan
+
+int Csm_Wrapper::find_match_point(const sm::LaserScan &map_scan, const sm::LaserScan &sensor_scan) {
+
+    input_.min_reading = sensor_scan.range_min;
+    input_.max_reading = sensor_scan.range_max;
+
+
+    scan_to_ldp(map_scan, map_ldp_);
+    scan_to_ldp(sensor_scan, scan_ldp_);
+
+    // **** reset ldp pose
+    // odometry, estimate, true_pose
+    map_ldp_->estimate[0] = 0.0;
+    map_ldp_->estimate[1] = 0.0;
+    map_ldp_->estimate[2] = 0.0;
+
+
+    // **** fill data in input
+    input_.laser_ref = map_ldp_;
+    input_.laser_sens = scan_ldp_;
+
+    // **** pose init guess
+
+
+
+    // *** compute relative translation and rotation between two scan
+    // get final pose?
+
+    input_.first_guess[0] = 0.0;
+    input_.first_guess[1] = 0.0;
+    input_.first_guess[2] = 0.0;
+
+    LDP laser_ref = input_.laser_ref;
+    LDP laser_sens = input_.laser_sens;
+
+
+    // start csm
+    ld_create_jump_tables(laser_ref);
+
+    // reading,theta to x,y
+    ld_compute_cartesian(laser_ref);
+    ld_compute_cartesian(laser_sens);
+
+    gsl_vector *x_new = gsl_vector_alloc(3);
+    gsl_vector *x_old_ = vector_from_array(3, input_.first_guess);
+
+    const double *q0 = x_old_->data();
+
+    double x_old[3];
+    copy_d(q0, 3, x_old);
+
+    ld_compute_world_coords(laser_sens, x_old);
+
+    find_correspondences_tricks(&input_);
+    kill_outliers_double(&input_);
+    double error = 0;
+    /* Trim correspondences */
+    kill_outliers_trim(&input_, &error);
+
+    int num_corr_after = ld_num_valid_correspondences(laser_sens);
+
+    return num_corr_after;
+}
+
 
 void Csm_Wrapper::set_tf(double x, double y, double yaw, tf::Transform &t) {
 
