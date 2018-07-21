@@ -17,7 +17,7 @@
 
 Csm_Wrapper::Csm_Wrapper(ros::NodeHandle nh, ros::NodeHandle nh_private) :
         nh_(nh), nh_private_(nh_private) {
-    ROS_INFO("starting Csm_Wrapper!!");
+//    ROS_INFO("starting Csm_Wrapper!!");
 
     init_params();
 
@@ -36,7 +36,7 @@ Csm_Wrapper::Csm_Wrapper(ros::NodeHandle nh, ros::NodeHandle nh_private) :
 
 
 void Csm_Wrapper::init_params() {
-    ROS_INFO("init Csm_Wrapper params");
+//    ROS_INFO("init Csm_Wrapper params");
     // **** csm
     // Maximum angular displacement between scans
     if (!nh_private_.getParam("max_angular_correction_deg", input_.max_angular_correction_deg))
@@ -166,7 +166,7 @@ void Csm_Wrapper::init_params() {
 
     sm_debug_write(sm_debug_write_flag);
 
-    ROS_INFO("csm param max_angular_correction_deg:%f", input_.max_angular_correction_deg);
+//    ROS_INFO("csm param max_angular_correction_deg:%f", input_.max_angular_correction_deg);
 
 
 }
@@ -176,7 +176,7 @@ void Csm_Wrapper::scan_to_ldp(const sm::LaserScan &scan, LDP &ldp, double offset
     ldp = ld_alloc_new(n);
     for (int i = 0; i < n; i++) {
         double r = scan.ranges[i];
-        bool valid = (r < scan.range_max) && (r > scan.range_min);
+        bool valid = (r < scan.range_max - 0.01) && (r > scan.range_min + 0.1);
 
         ldp->valid[i] = (valid) ? 1 : 0;
         ldp->readings[i] = (valid) ? r : -1;
@@ -260,7 +260,7 @@ double Csm_Wrapper::csm_fit(vector<double> &res) {
     if (output_.valid) {
 
 
-        ROS_ERROR("get relative translation [x,y,yaw]: [%f,%f,%f] \n", output_.x[0], output_.x[1], output_.x[2]);
+//        ROS_ERROR("get relative translation [x,y,yaw]: [%f,%f,%f] \n", output_.x[0], output_.x[1], output_.x[2]);
         double res_array[] = {output_.x[0], output_.x[1], output_.x[2]};
 
         res = vector<double>(res_array, res_array + 3);
@@ -271,7 +271,8 @@ double Csm_Wrapper::csm_fit(vector<double> &res) {
 
 
         for (int i = 0; i < map_ldp_->nrays; i++) {
-            if (!isnan(map_ldp_->readings[i]) && !isnan(scan_ldp_->points_w[i].rho) && scan_ldp_->corr[i].valid == 1) {
+            if (!std::isnan(map_ldp_->readings[i]) && !std::isnan(scan_ldp_->points_w[i].rho) &&
+                scan_ldp_->corr[i].valid == 1) {
                 map_val[i] = map_ldp_->readings[i];
                 scan_val[i] = scan_ldp_->points_w[i].rho;
                 corr_valid_cnt_++;
@@ -338,7 +339,7 @@ double Csm_Wrapper::get_base_pose(const sm::LaserScan &map_scan, const sm::Laser
     corr_valid_cnt = corr_valid_cnt_;
 
     if (res.empty()) {
-        ROS_ERROR("******************\ncsm failure \n******************\n");
+//        ROS_ERROR("******************\ncsm failure \n******************\n");
         return match_error;
     }
 

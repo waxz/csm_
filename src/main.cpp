@@ -44,7 +44,7 @@ void scan_cbk(const sm::LaserScan::ConstPtr & scan_msg){
 
 
 
-    ROS_INFO("start csm!!!!");
+//    ROS_INFO("start csm!!!!");
     // laser odometry
     // set base_pose to identity
     gm::Pose base_pose;
@@ -56,7 +56,7 @@ void scan_cbk(const sm::LaserScan::ConstPtr & scan_msg){
 
 }
 void lookup_base_laser_tf(const string &base_frame, const  string &laser_frame) {
-    ROS_INFO("wait for tf,%s, %s", base_frame.c_str(), laser_frame.c_str());
+//    ROS_INFO("wait for tf,%s, %s", base_frame.c_str(), laser_frame.c_str());
     tf::StampedTransform base_laser_tf_stamp;
 
     while (ros::ok()) {
@@ -72,14 +72,14 @@ void lookup_base_laser_tf(const string &base_frame, const  string &laser_frame) 
         break;
     }
     base_laser_tf = base_laser_tf_stamp;
-    ROS_INFO("lookup transformation %s to %s  successful", base_frame.c_str(), laser_frame.c_str());
+//    ROS_INFO("lookup transformation %s to %s  successful", base_frame.c_str(), laser_frame.c_str());
 
 }
 
 
 void locate2(const gm::PoseWithCovarianceStamped::ConstPtr &pose_msg, const nav_msgs::Odometry::ConstPtr &true_pose_msg){
 
-    ROS_INFO("sync!!!!!!");
+//    ROS_INFO("sync!!!!!!");
 
     // base pose to laser pose
     tf::Transform fix_base_tf_, true_fix_base_tf_;
@@ -114,14 +114,12 @@ void locate2(const gm::PoseWithCovarianceStamped::ConstPtr &pose_msg, const nav_
     csm_wrapper->get_base_pose(map_scan_, sensor_scan_, base_pose, base_laser_tf, corr_valid_cnt);
 
 
-    ROS_INFO("get amcl pose [%f,%f,%f] \n get icp pose [%f,%f,%f]",
-             pose_msg->pose.pose.position.x, pose_msg->pose.pose.position.y, pose_msg->pose.pose.orientation.w,
-             base_pose.position.x, base_pose.position.y, base_pose.orientation.w);
+
 }
 
 
 int main(int argc, char **argv) {
-    ROS_INFO("start test node");
+//    ROS_INFO("start test node");
     ros::init(argc, argv, "test_node");
     ros::NodeHandle nh;
     ros::NodeHandle nh_private("~");
@@ -149,7 +147,7 @@ int main(int argc, char **argv) {
 
 
 
-    ROS_INFO("start wait tf");
+//    ROS_INFO("start wait tf");
 
     // get tf
     lookup_base_laser_tf(base_frame,laser_frame);
